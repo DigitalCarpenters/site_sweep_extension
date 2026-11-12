@@ -4,84 +4,82 @@ const lastCleanedAt = new Map();
 const CLEANUP_COOLDOWN_MS = 10000;
 
 chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.id) return;
-  let url;
-  try { url = new URL(tab.url); } catch { return; }
-  if (!["http:", "https:"].includes(url.protocol)) return;
+    if (!tab.id) return;
+    let url;
+    try { url = new URL(tab.url); } catch { return; }
+    if (!["http:", "https:"].includes(url.protocol)) return;
 
-  if (cleaningOrigins.has(url.origin)) {
-    await displayFeedback(tab.id, "busy");
-    return;
-  }
-  const previousCleanup = lastCleanedAt.get(url.origin);
-  if (previousCleanup !== undefined && Date.now() - previousCleanup < CLEANUP_COOLDOWN_MS) {
-    await displayFeedback(tab.id, "recent");
-    return;
-  }
+    if (cleaningOrigins.has(url.origin)) {
+        await displayFeedback(tab.id, "busy");
+        return;
+    }
+    const previousCleanup = lastCleanedAt.get(url.origin);
+    if (previousCleanup !== undefined && Date.now() - previousCleanup < CLEANUP_COOLDOWN_MS) {
+        await displayFeedback(tab.id, "recent");
+        return;
+    }
 
-  cleaningOrigins.add(url.origin);
-  let documentId;
-  let finalTitle = "Clean this website";
-  try {
-    await resetToolbar(tab.id, "Clearing this website's browser data…");
-    documentId = await displayFeedback(tab.id, "cleaning");
-    await waitForCleanup(chrome.browsingData.remove(
-      { origins: [url.origin], since: 0 },
-      {
-        cache: true,
-        cacheStorage: true,
-        indexedDB: true,
-        localStorage: true,
-        serviceWorkers: true
-      }
-    ));
+    cleaningOrigins.add(url.origin);
+    let documentId;
+    let finalTitle = "Clean this website";
+    try {
+        await resetToolbar(tab.id, "Clearing this website's browser data…");
+        documentId = await displayFeedback(tab.id, "cleaning");
+        await waitForCleanup(chrome.browsingData.remove(
+            { origins: [url.origin], since: 0 },
+            {
+                cache: true,
+                cacheStorage: true,
+                serviceWorkers: true
+            }
+        ));
 
-    // Start the ten seconds only after Chrome confirms successful cleanup.
-    lastCleanedAt.set(url.origin, Date.now());
-    console.info("SiteSweep: browser data cleared", url.origin);
-    await displayFeedback(tab.id, "success", documentId);
-  } catch (error) {
-    console.error("SiteSweep could not confirm cleanup:", error);
-    finalTitle = "Cleanup could not be confirmed. Check SiteSweep's service worker console.";
-    await displayFeedback(tab.id, "error", documentId);
-  } finally {
-    cleaningOrigins.delete(url.origin);
-    await resetToolbar(tab.id, finalTitle);
-  }
+        // Start the ten seconds only after Chrome confirms successful cleanup.
+        lastCleanedAt.set(url.origin, Date.now());
+        console.info("SiteSweep: browser data cleared", url.origin);
+        await displayFeedback(tab.id, "success", documentId);
+    } catch (error) {
+        console.error("SiteSweep could not confirm cleanup:", error);
+        finalTitle = "Cleanup could not be confirmed. Check SiteSweep's service worker console.";
+        await displayFeedback(tab.id, "error", documentId);
+    } finally {
+        cleaningOrigins.delete(url.origin);
+        await resetToolbar(tab.id, finalTitle);
+    }
 });
 
 // Chrome can leave removal pending longer than the worker's 30-second idle window.
 // Keep it awake only for this operation, with a two-minute upper bound.
 async function waitForCleanup(operation) {
-  const keepAlive = setInterval(() => {
-    void chrome.runtime.getPlatformInfo().catch(error => console.warn("SiteSweep keepalive:", error));
-  }, 20000);
-  let timeout;
-  try {
-    await Promise.race([
-      operation,
-      new Promise((_, reject) => {
-        timeout = setTimeout(() => reject(new Error("Chrome did not confirm cleanup within two minutes")), 120000);
-      })
-    ]);
-  } finally {
-    clearInterval(keepAlive);
-    clearTimeout(timeout);
-  }
+    const keepAlive = setInterval(() => {
+        void chrome.runtime.getPlatformInfo().catch(error => console.warn("SiteSweep keepalive:", error));
+    }, 20000);
+    let timeout;
+    try {
+        await Promise.race([
+            operation,
+            new Promise((_, reject) => {
+                timeout = setTimeout(() => reject(new Error("Chrome did not confirm cleanup within two minutes")), 120000);
+            })
+        ]);
+    } finally {
+        clearInterval(keepAlive);
+        clearTimeout(timeout);
+    }
 }
 
 async function resetToolbar(tabId, title = "Clean this website") {
-  // A tab may close during cleanup; that must not create another error.
-  await Promise.allSettled([
-    chrome.action.setBadgeText({ tabId, text: "" }),
-    chrome.action.setTitle({ tabId, title })
-  ]);
+    // A tab may close during cleanup; that must not create another error.
+    await Promise.allSettled([
+        chrome.action.setBadgeText({ tabId, text: "" }),
+        chrome.action.setTitle({ tabId, title })
+    ]);
 }
 
 async function clearOldBadges() {
-  await chrome.action.setBadgeText({ text: "" });
-  const tabs = await chrome.tabs.query({});
-  await Promise.allSettled(tabs.filter(tab => tab.id).map(tab => resetToolbar(tab.id)));
+    await chrome.action.setBadgeText({ text: "" });
+    const tabs = await chrome.tabs.query({});
+    await Promise.allSettled(tabs.filter(tab => tab.id).map(tab => resetToolbar(tab.id)));
 }
 
 chrome.runtime.onInstalled.addListener(() => { void clearOldBadges(); });
@@ -90,28 +88,28 @@ chrome.runtime.onStartup.addListener(() => { void clearOldBadges(); });
 void clearOldBadges().catch(error => console.warn("SiteSweep toolbar reset:", error));
 
 async function displayFeedback(tabId, phase, documentId) {
-  try {
-    const target = { tabId };
-    if (documentId) target.documentIds = [documentId];
-    const results = await chrome.scripting.executeScript({
-      target,
-      args: [chrome.runtime.getURL("assets/Confetti.gif"), phase],
-      func: showFeedback
-    });
-    return results[0]?.documentId;
-  } catch (error) {
-    // A restricted page, navigation, or blocked image must never stop cleanup.
-    console.warn("SiteSweep feedback unavailable:", error);
-  }
+    try {
+        const target = { tabId };
+        if (documentId) target.documentIds = [documentId];
+        const results = await chrome.scripting.executeScript({
+            target,
+            args: [chrome.runtime.getURL("assets/Confetti.gif"), phase],
+            func: showFeedback
+        });
+        return results[0]?.documentId;
+    } catch (error) {
+        // A restricted page, navigation, or blocked image must never stop cleanup.
+        console.warn("SiteSweep feedback unavailable:", error);
+    }
 }
 
 // Chrome copies this function into the webpage: keep it self-contained.
 async function showFeedback(gifUrl, phase) {
-  document.getElementById("sitesweep-confetti")?.remove();
-  const host = document.createElement("div");
-  host.id = "sitesweep-confetti";
-  host.dataset.phase = phase;
-  host.style.cssText = `
+    document.getElementById("sitesweep-confetti")?.remove();
+    const host = document.createElement("div");
+    host.id = "sitesweep-confetti";
+    host.dataset.phase = phase;
+    host.style.cssText = `
     all: initial !important;
     display: block !important;
     position: fixed !important;
@@ -124,9 +122,9 @@ async function showFeedback(gifUrl, phase) {
     visibility: visible !important;
     opacity: 1 !important;
   `;
-  const shadow = host.attachShadow({ mode: "open" });
-  const style = document.createElement("style");
-  style.textContent = `
+    const shadow = host.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = `
     * { box-sizing: border-box; }
     .card {
       display: flex; align-items: center; justify-content: center;
@@ -182,52 +180,52 @@ async function showFeedback(gifUrl, phase) {
     }
   `;
 
-  const card = document.createElement("div");
-  card.className = "card";
-  const hasConfetti = phase === "success" || phase === "cleaning";
-  if (!hasConfetti) card.classList.add("text-only");
-  card.setAttribute("role", "status");
-  card.setAttribute("aria-live", "polite");
-  const words = phase === "success" ? ["CACHE", "HAS BEEN", "DELETED"]
-    : phase === "recent" ? ["ALREADY", "CLEANED"]
-    : phase === "busy" ? ["NOTHING", "TO", "CLEANUP"]
-    : phase === "error" ? ["CLEANUP", "NOT", "CONFIRMED"]
-    : ["CLEARING", "SITE", "DATA"];
-  card.setAttribute("aria-label", words.join(" "));
-  const image = document.createElement("img");
-  image.alt = "";
-  image.setAttribute("aria-hidden", "true");
-  const copy = document.createElement("div");
-  copy.className = "copy";
-  words.forEach((word, index) => {
-    const line = document.createElement("span");
-    line.className = "line";
-    line.textContent = word;
-    line.style.setProperty("--delay", `${140 + index * 150}ms`);
-    copy.appendChild(line);
-  });
-  card.append(image, copy);
-  shadow.append(style, card);
-  document.documentElement.appendChild(host);
+    const card = document.createElement("div");
+    card.className = "card";
+    const hasConfetti = phase === "success" || phase === "cleaning";
+    if (!hasConfetti) card.classList.add("text-only");
+    card.setAttribute("role", "status");
+    card.setAttribute("aria-live", "polite");
+    const words = phase === "success" ? ["CACHE", "HAS BEEN", "DELETED"]
+        : phase === "recent" ? ["ALREADY", "CLEANED"]
+            : phase === "busy" ? ["NOTHING", "TO", "CLEANUP"]
+                : phase === "error" ? ["CLEANUP", "NOT", "CONFIRMED"]
+                    : ["CLEARING", "SITE", "DATA"];
+    card.setAttribute("aria-label", words.join(" "));
+    const image = document.createElement("img");
+    image.alt = "";
+    image.setAttribute("aria-hidden", "true");
+    const copy = document.createElement("div");
+    copy.className = "copy";
+    words.forEach((word, index) => {
+        const line = document.createElement("span");
+        line.className = "line";
+        line.textContent = word;
+        line.style.setProperty("--delay", `${140 + index * 150}ms`);
+        copy.appendChild(line);
+    });
+    card.append(image, copy);
+    shadow.append(style, card);
+    document.documentElement.appendChild(host);
 
-  if (!hasConfetti) {
-    image.remove();
-  } else {
-    try {
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("GIF loading timed out")), 5000);
-        image.onload = () => { clearTimeout(timeout); resolve(); };
-        image.onerror = () => { clearTimeout(timeout); reject(new Error("GIF could not load")); };
-        image.src = gifUrl;
-      });
-    } catch (error) {
-      console.warn("SiteSweep: showing text feedback without GIF", error);
-      image.remove();
+    if (!hasConfetti) {
+        image.remove();
+    } else {
+        try {
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error("GIF loading timed out")), 5000);
+                image.onload = () => { clearTimeout(timeout); resolve(); };
+                image.onerror = () => { clearTimeout(timeout); reject(new Error("GIF could not load")); };
+                image.src = gifUrl;
+            });
+        } catch (error) {
+            console.warn("SiteSweep: showing text feedback without GIF", error);
+            image.remove();
+        }
     }
-  }
-  // Animate the card, not the positioned host, so it stays centered throughout.
-  card.classList.add("ready");
-  setTimeout(() => card.classList.add("leaving"), 2750);
-  setTimeout(() => host.remove(), 3000);
-  return { phase, duration: 3000, imageLoaded: image.isConnected };
+    // Animate the card, not the positioned host, so it stays centered throughout.
+    card.classList.add("ready");
+    setTimeout(() => card.classList.add("leaving"), 2750);
+    setTimeout(() => host.remove(), 3000);
+    return { phase, duration: 3000, imageLoaded: image.isConnected };
 }
